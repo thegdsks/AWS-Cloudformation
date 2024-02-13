@@ -1,0 +1,340 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates an AWS environment for the corporate website. This includes a VPC, subnets, EC2 instances, a load balancer, and security settings.",
+  "Parameters": {
+    "InstanceType": {
+      "Description": "The EC2 instance type for the web servers (t2.micro).",
+      "Type": "String",
+      "AllowedValues": ["t2.micro", "t2.small"],
+      "Default": "t2.micro"
+    },
+    "KeyPair": {
+      "Description": "The name of the key pair to use for SSH access to the EC2 instances.",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "YourIp": {
+      "Description": "Your public IP address in CIDR notation for secure SSH access (e.g., x.x.x.x/32).",
+      "Type": "String",
+      "AllowedPattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+    }
+  },
+  "Resources": {
+    "EngineeringVpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/18",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "EngineeringVPC"
+          }
+        ]
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "CidrBlock": "10.0.0.0/24",
+        "AvailabilityZone": "us-east-1a",
+        "MapPublicIpOnLaunch": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicSubnet1"
+          }
+        ]
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": "us-east-1b",
+        "MapPublicIpOnLaunch": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicSubnet2"
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "EngineeringIGW"
+          }
+        ]
+      }
+    },
+    "AttachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "RouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicRouteTable"
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "AttachGateway",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "SubnetRouteTableAssociation1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        },
+        "RouteTableId": {
+          "Ref": "RouteTable"
+        }
+      }
+    },
+    "SubnetRouteTableAssociation2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnet2"
+        },
+        "RouteTableId": {
+          "Ref": "RouteTable"
+        }
+      }
+    },
+    "WebserversSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": "WebserversSG",
+        "GroupDescription": "Security group for web servers allowing ports 22 and 80",
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "YourIp"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "WebServer1": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "ImageId": "ami-01cc34ab2709337aa",
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebserversSG"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum update -y\n",
+                "yum install -y httpd php git\n",
+                "systemctl start httpd\n",
+                "systemctl enable httpd\n",
+                "aws s3 cp s3://mycorp-webapp-resources/index.html /var/www/html/index.html\n"
+              ]
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "WebServer1"
+          }
+        ]
+      }
+    },
+    "WebServer2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "ImageId": "ami-01cc34ab2709337aa",
+        "SubnetId": {
+          "Ref": "PublicSubnet2"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "WebserversSG"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum update -y\n",
+                "yum install -y httpd php git\n",
+                "systemctl start httpd\n",
+                "systemctl enable httpd\n",
+                "aws s3 cp s3://mycorp-webapp-resources/index.html /var/www/html/index.html\n"
+              ]
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "WebServer2"
+          }
+        ]
+      }
+    },
+    "ApplicationLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": "CorpWebALB",
+        "Subnets": [
+          {
+            "Ref": "PublicSubnet1"
+          },
+          {
+            "Ref": "PublicSubnet2"
+          }
+        ],
+        "SecurityGroups": [
+          {
+            "Ref": "WebserversSG"
+          }
+        ],
+        "Scheme": "internet-facing",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CorpWebALB"
+          }
+        ]
+      }
+    },
+    "TargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "Name": "CorpWebTG",
+        "Protocol": "HTTP",
+        "Port": 80,
+        "VpcId": {
+          "Ref": "EngineeringVpc"
+        },
+        "TargetType": "instance",
+        "Targets": [
+          {
+            "Id": {
+              "Ref": "WebServer1"
+            }
+          },
+          {
+            "Id": {
+              "Ref": "WebServer2"
+            }
+          }
+        ],
+        "HealthCheckProtocol": "HTTP",
+        "HealthCheckPath": "/",
+        "HealthCheckEnabled": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CorpWebTG"
+          }
+        ]
+      }
+    },
+    "Listener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroup"
+            }
+          }
+        ],
+        "LoadBalancerArn": {
+          "Ref": "ApplicationLoadBalancer"
+        },
+        "Port": 80,
+        "Protocol": "HTTP"
+      }
+    }
+  },
+  "Outputs": {
+    "WebUrl": {
+      "Description": "The URL of the corporate web application.",
+      "Value": {
+        "Fn::GetAtt": [
+          "ApplicationLoadBalancer",
+          "DNSName"
+        ]
+      }
+    }
+  }
+}
