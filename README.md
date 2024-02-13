@@ -1,4 +1,4 @@
-# Project Name: AWS CloudFormation Templates for Web Applications
+# AWS CloudFormation Templates for Web Applications
 
 Welcome to our repository of AWS CloudFormation templates, designed to help you deploy scalable, highly available, and secure web applications on AWS with ease. This project includes a variety of templates, with the `corpweb` folder containing a specialized template for deploying a corporate web application infrastructure.
 
