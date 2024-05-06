@@ -52,6 +52,7 @@ To avoid incurring future charges, remember to delete the CloudFormation stack o
 ```bash
 aws cloudformation delete-stack --stack-name CorpWebStack
 
+```
 --
 
 ## License
